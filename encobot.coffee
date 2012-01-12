@@ -24,6 +24,10 @@ Array::choice = ->
 class Encobot extends Bot
 
   constructor: (auth, userid, roomid) ->
+    @state =
+      autoAwesome: Config.autoAwesome ? true
+    @debug = false
+
     super auth, userid, roomid
 
   setup: ->
@@ -81,7 +85,7 @@ class Encobot extends Bot
           @speak text
 
   autoAwesome: (data) ->
-    return unless bot.config.autoAwesome
+    return unless @state.autoAwesome
 
     @afterPause Math.randInt(5, 30), =>
       v = Math.random()
@@ -139,17 +143,7 @@ class Encobot extends Bot
 
 
 bot = new Encobot(Config.auth, Config.userid, Config.roomid)
-bot.debug = false
 
-bot.config =
-  autoAwesome: true
-
-bot.state = {}
-
-
-bot.on "roomChanged", (data) ->
-  # bot.setup()
-  bot.autoAwesome()
 
 responses = [
   {
@@ -176,10 +170,10 @@ responses = [
     func: (data, match) ->
       switch match[1]
         when "on"
-          bot.config.autoAwesome = true
+          bot.state.autoAwesome = true
         when "off"
-          bot.config.autoAwesome = false
-      s = if bot.config.autoAwesome then "on" else "off"
+          bot.state.autoAwesome = false
+      s = if bot.state.autoAwesome then "on" else "off"
       bot.speak("autoAwesome: #{s}")
   }
 ]

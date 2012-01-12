@@ -13,7 +13,7 @@ module.exports =
     "Woo! {{name}}'s here, now we can start the party!",
     "/me shakes her booty across the floor to dance next to {{name}}."
   ]
-
   pgRating: true
+  autoAwesome: true
 
   ownerIds: []
