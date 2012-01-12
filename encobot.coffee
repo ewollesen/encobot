@@ -93,6 +93,7 @@ class Encobot extends Bot
 
   handleRegistered: (data) ->
     @greet(data)
+    @updateLastSeenDueToRegistered(data)
 
   handleNoSong: (data) ->
     @speak "Awww, I hate it when it's quiet in here."
@@ -133,6 +134,22 @@ class Encobot extends Bot
           doc = if one then one else {userId: userId}
           doc.name = name
           doc.spoke = new Date
+          doc.roomId = @roomId
+          c.save doc
+          @db.close()
+
+  updateLastSeenDueToRegistered: (data) ->
+    user = data.user[0].name
+    userId = data.user[0].userid
+    name = data.user[0].name
+
+    @db = new Db("encobot", new Server("127.0.0.1", 27017, {}))
+    @db.open (err, p_client) =>
+      @db.collection "last_seen", (err, c) =>
+        c.findOne {userId: userId}, (err, one) =>
+          doc = if one then one else {userId: userId}
+          doc.name = name
+          doc.registered = new Date
           doc.roomId = @roomId
           c.save doc
           @db.close()
@@ -208,7 +225,7 @@ class Encobot extends Bot
       @db.collection "last_seen", (err, c) =>
         c.findOne {roomId: @roomId, name: new RegExp("#{name}", "i")}, (err, doc) =>
           if doc
-            latest = if doc.vote > doc.spoke then doc.vote else doc.spoke
+            latest = new Date Math.max(doc.vote ? 0, doc.spoke ? 0, doc.registered ? 0)
             seen = "I last saw #{doc.name} at #{latest.toString()}"
           else
             seen = "I've not seen #{name} before."
