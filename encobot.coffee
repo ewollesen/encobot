@@ -5,6 +5,7 @@ Db = require("mongodb").Db
 Connection = require("mongodb").Connection
 Server = require("mongodb").Server
 Mu = require("Mu/mu")
+spawn = require('child_process').spawn
 
 responses = [
   {
@@ -44,6 +45,12 @@ responses = [
       artist = match[1]
       bot.lastHeard artist, (heard) ->
         bot.speak(heard)
+  }, {
+    public: true
+    regex: new RegExp("^#{Config.name} tell me my fortune", "i")
+    func: (data) ->
+      bot.fortune (fortune) ->
+        bot.speak(fortune)
   }
 ]
 
@@ -218,6 +225,13 @@ class Encobot extends Bot
             console.log "encobot updated her owner to #{Config.owner}"
           else
             console.log "Error updating profile", r
+
+  fortune: (cb) ->
+    args = ["-s", "fortunes"]
+    args.push("-a") unless Config.pgRating
+    fortune = spawn("fortune", args)
+    fortune.stdout.on "data", (data) =>
+      cb(data)
 
   lastSeen: (name, cb) ->
     @db = new Db("encobot", new Server("127.0.0.1", 27017, {}))
