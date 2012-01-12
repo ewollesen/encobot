@@ -1,8 +1,9 @@
 Bot = require("ttapi")
-Auth = require("./auth")
+Config = require(process.argv[2])
 Db = require("mongodb").Db
 Connection = require("mongodb").Connection
 Server = require("mongodb").Server
+Mu = require("Mu/mu")
 owners = [
   "4ed7cb734fe7d06007000032", # Ronnie Bjarnason
   "4ed7bd8e4fe7d01c80000628", # Joseph LeBaron
@@ -29,19 +30,19 @@ class Encobot extends Bot
     super auth, userid, roomid
 
   setup: ->
-    @modifyName "encobot", (data) ->
-      console.log "encobot updated her name:", data
+    @modifyName Config.name, (data) ->
+      console.log "encobot updated her name to #{Config.name}:", data
 
-    @modifyLaptop "iphone", (data) ->
-      console.log "encobot updated her laptop:", data
+    @modifyLaptop Config.laptop, (data) ->
+      console.log "encobot updated her laptop to #{Config.laptop}:", data
 
-    @setAvatar 6, (data) =>
-      console.log "encobot updated her avatar:", data
+    @setAvatar Config.avatar, (data) =>
+      console.log "encobot updated her avatar #{Config.avatar}:", data
 
     @modifyProfile
-      about: "This encobot belongs to: encoded."
+      about: "This encobot belongs to: #{Config.owner}."
     , (data) ->
-      console.log "encobot updated her profile:", data
+      console.log "encobot updated her owner to: #{Config.owner}:", data
 
   awesome: (cb) ->
     @vote "up", cb
@@ -54,48 +55,107 @@ class Encobot extends Bot
       cb()
     , delayInSeconds * 1000
 
-  verve: (data) ->
-    song = data.room.metadata.current_song.metadata.song
-    artist = data.room.metadata.current_song.metadata.artist
-    if "The Freshmen" is song and "The Verve Pipe" is artist
-      @speak "Ben, you stink."
-      @lame()
-      true
-    false
+  # verve: (data) ->
+  #   song = data.room.metadata.current_song.metadata.song
+  #   artist = data.room.metadata.current_song.metadata.artist
+  #   if "The Freshmen" is song and "The Verve Pipe" is artist
+  #     @speak "Ben, you stink."
+  #     @lame()
+  #     true
+  #   false
+
+  pickAndCompile: (phrases, values, cb) ->
+    mu = Mu.compileText(phrases.choice())
+    mu(values).addListener "data", (c) =>
+      cb(c)
 
   greet: (data) ->
     name = data.user[0].name
-    return if "encobot" is name # magic string
+    return if Config.name is name
+    return if 0 >= Config.greetings.length
 
     @afterPause Math.randInt(2, 7), =>
       v = Math.random()
       return if 0.5 > v
 
-      greetings = [
-        "Hey #{name}, long time no see!",
-        "Woo! #{name}'s here, now we can start the party!",
-        "/me shakes her booty across the floor to dance next to #{name}."
-      ]
-      @speak greetings.choice()
+      @pickAndCompile Config.greetings,
+        name: name
+        , (text) =>
+          @speak text
+
+  autoAwesome: (data) ->
+    return unless bot.config.autoAwesome
+
+    @afterPause Math.randInt(5, 30), =>
+      v = Math.random()
+
+      if v > 0.95
+        @speak("Ooooh! I LOVE this song!")
+        @vote "up"
+      else if v > 0.93 and v <= 0.95
+        @speak("This song STINKS!")
+        @vote "down"
+      else
+        @vote "up"
+
+  yoink: (data) ->
+    songId = data.room.metadata.current_song._id
+
+    @playlistAdd(songId)
+    @playlistAll (data) =>
+      length = data.list.length
+      if length > 1
+        @playlistReorder(0, Math.randInt(length))
+      if data.list.length > 300
+        @playlistRemove(length - 1)
+
+  markovClear: (data, cb) ->
+    @db = new Db(Config.name, new Server("127.0.0.1", 27017, {}))
+    @db.open (err, p_client) =>
+      @db.dropDatabase (err, result) =>
+        @state.prevSong = undefined
+        console.log("cleared database")
+        @db.close()
+        cb(err, result)
+
+  markovPush: (data) ->
+    songId = data.room.metadata.current_song._id
+    @db = new Db("encobot", new Server("127.0.0.1", 27017, {}))
+
+    @db.open (err, p_client) =>
+      @db.collection "markov_chain", (err, c) =>
+        doc =
+          songId: songId
+        doc.prevSong = @state.prevSong if @state.prevSong
+        c.insert doc, (err, docs) ->
+          console.log("appended a link to the chain", doc)
+          console.log("Now playing: #{data.room.metadata.current_song.metadata.song} - #{data.room.metadata.current_song.metadata.artist}")
+
+        @state.prevSong = songId
+        @db.close()
+
+  markovBreak: ->
+    @state.prevSong = undefined
 
 
-bot = new Encobot(Auth.auth, Auth.userid, Auth.roomid)
+
+bot = new Encobot(Config.auth, Config.userid, Config.roomid)
 bot.debug = false
 
 bot.config =
-  "autonod": true
+  autoAwesome: true
 
 bot.state = {}
 
 
 bot.on "roomChanged", (data) ->
   # bot.setup()
-  bot.autonod()
+  bot.autoAwesome()
 
 responses = [
   {
     public: true
-    regex: /^(what(?:\'?s?| is)? up,?|hello|hi|heya?) encobot\??/i
+    regex: new RegExp("^(what(?:\\'?s?| is)? up,?|hello|hi|heya?) #{Config.name}\\??", "i")
     func: (data) ->
       name = data.name
       r = [
@@ -108,28 +168,30 @@ responses = [
       bot.speak r.choice()
   }, {
     public: true
-    regex: /^encobot identify( yourself)?$/
+    regex: new RegExp("^#{Config.name} identify( yourself)?", "i")
     func: (data) ->
       bot.speak "I am encobot! I come in peace to destroy the world."
   }, {
-    public: true
-    regex: /\b(bitch(?:es)?|shit(?:er|ty)?|fuck(?:ing?|er|ed)?|cunt|asshole)\b/
-    func: (data) ->
-      name = data.name
-      bot.speak "Hey #{name}! Let's try to keep our PG rating, OK?"
-  }, {
     public: false
-    regex: /^encobot autonod(?: (on|off)?)?$/
+    regex: new RegExp("^#{Config.name} autoAwesome(?: (on|off)?)?", "i")
     func: (data, match) ->
       switch match[1]
         when "on"
-          bot.config.autonod = true
+          bot.config.autoAwesome = true
         when "off"
-          bot.config.autonod = false
-      s = if bot.config.autonod then "on" else "off"
-      bot.speak("autonod: #{s}")
+          bot.config.autoAwesome = false
+      s = if bot.config.autoAwesome then "on" else "off"
+      bot.speak("autoAwesome: #{s}")
   }
 ]
+
+if Config.pgRating
+  responses.push
+    public: true
+    regex: /\b(bitch(?:es)?|shit(?:er|ty)?|fuck(?:ing?|er|ed)?|cunt|asshole)\b/i
+    func: (data) ->
+      name = data.name
+      bot.speak "Hey #{name}! Let's try to keep our PG rating, OK?"
 
 bot.on "speak", (data) ->
   name = data.name
@@ -144,68 +206,14 @@ bot.on "speak", (data) ->
         response.func(data, match)
         break
 
-bot.yoink = (data) ->
-  songId = data.room.metadata.current_song._id
-  bot.playlistAdd(songId)
-  bot.playlistAll (data) ->
-    length = data.list.length
-    if length > 1
-      bot.playlistReorder(0, Math.randInt(length))
-    if data.list.length > 300
-      bot.playlistRemove(length - 1)
-
-bot.autonod = (data) ->
-  return unless bot.config.autonod
-
-  @afterPause Math.randInt(5, 30), =>
-    v = Math.random()
-
-    if v > 0.95
-      bot.speak("Ooooh! I LOVE this song!")
-      bot.vote "up"
-    else if v > 0.93 and v <= 0.95
-      bot.speak("This song STINKS!")
-      bot.vote "down"
-    else
-      bot.vote "up"
-
-bot.markovClear = (data, cb) ->
-  bot.db = new Db("encobot", new Server("127.0.0.1", 27017, {}))
-  bot.db.open (err, p_client) ->
-    bot.db.dropDatabase (err, result) ->
-      bot.state.prevSong = undefined
-      console.log("cleared database")
-      bot.db.close()
-      cb(err, result)
-
-
-bot.markovPush = (data) ->
-  songId = data.room.metadata.current_song._id
-  bot.db = new Db("encobot", new Server("127.0.0.1", 27017, {}))
-
-  bot.db.open (err, p_client) ->
-    bot.db.collection "markhov_chain", (err, c) ->
-      doc =
-        songId: songId
-      doc.prevSong = bot.state.prevSong if bot.state.prevSong
-      c.insert doc, (err, docs) ->
-        console.log("appended a link to the chain", doc)
-        console.log("Now playing: #{data.room.metadata.current_song.metadata.song} - #{data.room.metadata.current_song.metadata.artist}")
-
-      bot.state.prevSong = songId
-      bot.db.close()
-
-bot.markovBreak = ->
-  bot.state.prevSong = undefined
-
 bot.on "newsong", (data) ->
   dj = data.room.metadata.current_dj
-  if dj is Auth.userid
+  if dj is Config.userid
     bot.markovBreak()
     return
 
-  return if bot.verve(data)
-  bot.autonod(data)
+  # return if bot.verve(data)
+  bot.autoAwesome(data)
   bot.yoink(data)
   bot.markovPush(data)
 
