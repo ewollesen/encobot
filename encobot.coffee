@@ -5,12 +5,7 @@ Db = require("mongodb").Db
 Connection = require("mongodb").Connection
 Server = require("mongodb").Server
 Mu = require("Mu/mu")
-owners = [
-  "4ed7cb734fe7d06007000032", # Ronnie Bjarnason
-  "4ed7bd8e4fe7d01c80000628", # Joseph LeBaron
-  "4ed6b0ec4fe7d01c8000014b", # Mike Metcalf
-  "4edfa46e4fe7d029450023f7"  # Eric Wollesen
-]
+
 
 Math.randInt = (min, max) ->
   max ||= min
@@ -24,6 +19,7 @@ Math.randInt = (min, max) ->
 Array::choice = ->
   i = Math.randInt @length
   this[i]
+
 
 class Encobot extends Bot
 
@@ -138,6 +134,8 @@ class Encobot extends Bot
   markovBreak: ->
     @state.prevSong = undefined
 
+  isOwner: (userId) ->
+    userId in @moderatorIds or userId in Config.ownerIds
 
 
 bot = new Encobot(Config.auth, Config.userid, Config.roomid)
@@ -201,8 +199,7 @@ bot.on "speak", (data) ->
 
   for response in responses
     if ((match = text.match(response.regex)))
-      console.log("matched against #{response.regex}")
-      if response.public or userid in owners
+      if response.public or bot.isOwner(userid)
         console.log "encobot responds to #{response.regex} from #{name}"
         response.func(data, match)
         break
@@ -218,6 +215,9 @@ bot.on "newsong", (data) ->
   bot.yoink(data)
   bot.markovPush(data)
 
+
+bot.on "roomChanged", (data) ->
+  bot.moderatorIds = data.room.metadata.moderator_id
 
 bot.on "registered", (data) ->
   bot.greet(data)

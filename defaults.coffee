@@ -16,3 +16,4 @@ module.exports =
 
   pgRating: true
 
+  ownerIds: []

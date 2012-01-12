@@ -15,3 +15,8 @@ module.exports =
   # ]
 
   # pgRating: true
+
+  ownerIds: [
+    "4edfa46e4fe7d029450023f7", # encoded
+    # add Chris Rohn
+  ]
