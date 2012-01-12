@@ -26,25 +26,47 @@ class Encobot extends Bot
   constructor: (auth, userid, roomid) ->
     @state =
       autoAwesome: Config.autoAwesome ? true
-    @debug = false
+    @debug = Config.debug ? false
     @greetingResponses = Config.greetingResponses ? []
 
     super auth, userid, roomid
 
-  setup: ->
-    @modifyName Config.name, (data) ->
-      console.log "encobot updated her name to #{Config.name}:", data
+  checkAndCorrectSetup: ->
+    modified = false
 
-    @modifyLaptop Config.laptop, (data) ->
-      console.log "encobot updated her laptop to #{Config.laptop}:", data
+    @userInfo (data) =>
+      if Config.name isnt data.name
+        modified = true
+        @modifyName Config.name, (r) ->
+          if r.success
+            console.log "encobot updated her name to #{Config.name}"
+          else
+            console.log "Error updating name", r
 
-    @setAvatar Config.avatar, (data) =>
-      console.log "encobot updated her avatar #{Config.avatar}:", data
+      if Config.avatar isnt data.avatarid
+        modified = true
+        @setAvatar Config.avatar, (r) ->
+          if r.success
+            console.log "encobot updated her avatar to #{Config.avatar}"
+          else
+            console.log "Error updating avatar", r
 
-    @modifyProfile
-      about: "This encobot belongs to: #{Config.owner}."
-    , (data) ->
-      console.log "encobot updated her owner to: #{Config.owner}:", data
+      if Config.laptop isnt data.laptop
+        modified = true
+        @modifyLaptop Config.laptop, (r) ->
+          if r.success
+            console.log "encobot updated her laptop to #{Config.laptop}"
+          else
+            console.log "Error updating laptop", r
+
+      if modified
+        @modifyProfile
+          about: "This encobot belongs to: #{Config.owner}."
+        , (r) ->
+          if r.success
+            console.log "encobot updated her owner to: #{Config.owner}:"
+          else
+            console.log "Error updating profile", r
 
   awesome: (cb) ->
     @vote "up", cb
@@ -85,9 +107,10 @@ class Encobot extends Bot
       if v > 0.95
         @speak("Ooooh! I LOVE this song!")
         @vote "up"
-      else if v > 0.93 and v <= 0.95
-        @speak("This song STINKS!")
-        @vote "down"
+      # TODO: move me to a sass mode or something
+      # else if v > 0.93 and v <= 0.95
+      #   @speak("This song STINKS!")
+      #   @vote "down"
       else
         @vote "up"
 
@@ -202,6 +225,7 @@ bot.on "newsong", (data) ->
 
 
 bot.on "roomChanged", (data) ->
+  bot.checkAndCorrectSetup(data)
   bot.moderatorIds = data.room.metadata.moderator_id
 
 bot.on "registered", (data) ->
