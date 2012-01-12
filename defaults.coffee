@@ -23,7 +23,7 @@ module.exports =
     "I'm glad to see you, {{name}}."
   ]
 
-  pgRating: true
-  autoAwesome: true
+  pgRating: false
+  autoAwesome: false
 
   ownerIds: []

@@ -22,7 +22,8 @@ module.exports =
     "Got any new music for me, {{name}}?"
   ]
 
-  # pgRating: true
+  # pgRating: false
+  autoAwesome: true
 
   ownerIds: [
     "4edfa46e4fe7d029450023f7", # encoded
