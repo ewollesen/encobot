@@ -1,5 +1,6 @@
+append = require("append")
 Bot = require("ttapi")
-Config = require(process.argv[2])
+Config = append(require("./defaults"), require(process.argv[2]))
 Db = require("mongodb").Db
 Connection = require("mongodb").Connection
 Server = require("mongodb").Server
