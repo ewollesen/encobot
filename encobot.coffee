@@ -185,10 +185,16 @@ bot.on "speak", (data) ->
         break
 
 bot.on "newsong", (data) ->
+  console.log("newsong received", data.room.metadata.current_song)
+
   dj = data.room.metadata.current_dj
   if dj is Config.userid
     bot.markovBreak()
     return
+
+  unless data.room.metadata.current_song._id?
+    console.log("Received a newsong notification without a song id!")
+    console.log(data)
 
   bot.autoAwesome(data)
   bot.yoink(data)
