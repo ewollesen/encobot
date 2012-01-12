@@ -6,6 +6,47 @@ Connection = require("mongodb").Connection
 Server = require("mongodb").Server
 Mu = require("Mu/mu")
 
+responses = [
+  {
+    public: true
+    regex: new RegExp("^(what(?:'?s?| is)? up,?|hello|hi|h[ei]ya?) #{Config.name}\\??", "i")
+    func: (data) ->
+      name = data.name
+      bot.pickAndCompile bot.greetingResponses, {name: name}, (text) ->
+        bot.speak text
+  }, {
+    public: true
+    regex: new RegExp("^#{Config.name} identify( yourself)?", "i")
+    func: (data) ->
+      bot.speak "I am encobot! I come in peace to destroy the world."
+  }, {
+    public: false
+    regex: new RegExp("^#{Config.name} autoAwesome(?: (on|off)?)?", "i")
+    func: (data, match) ->
+      switch match[1]
+        when "on"
+          bot.state.autoAwesome = true
+        when "off"
+          bot.state.autoAwesome = false
+      s = if bot.state.autoAwesome then "on" else "off"
+      bot.speak("autoAwesome: #{s}")
+  }, {
+    public: false
+    regex: new RegExp("^#{Config.name} (?:last )?seen (.+)", "i")
+    func: (data, match) ->
+      name = match[1]
+      bot.lastSeen name, (seen) ->
+        bot.speak(seen)
+  }
+]
+
+if Config.pgRating
+  responses.push
+    public: true
+    regex: /\b(bitch(?:es)?|shit(?:er|ty)?|fuck(?:ing?|er|ed)?|cunt|asshole)\b/i
+    func: (data) ->
+      name = data.name
+      bot.speak "Hey #{name}! Let's try to keep our PG rating, OK?"
 
 Math.randInt = (min, max) ->
   max ||= min
@@ -28,8 +69,90 @@ class Encobot extends Bot
       autoAwesome: Config.autoAwesome ? true
     @debug = Config.debug ? false
     @greetingResponses = Config.greetingResponses ? []
+    @on "speak", @handleSpeak
+    @on "newsong", @handleNewSong
+    @on "roomChanged", @handleRoomChanged
+    @on "registered", @handleRegistered
+    @on "nosong", @handleNoSong
+    @on "update_votes", @handleUpdateVotes
 
     super auth, userid, roomid
+
+
+  handleRoomChanged: (data) ->
+    @checkAndCorrectSetup(data)
+    @moderatorIds = data.room.metadata.moderator_id
+
+  handleRegistered: (data) ->
+    @greet(data)
+
+  handleNoSong: (data) ->
+    @speak "Awww, I hate it when it's quiet in here."
+
+  handleSpeak: (data) ->
+    @checkForAndRespondToCommands(data)
+    @updateLastSeenDueToSpeech(data)
+
+  handleNewSong: (data) ->
+    @recordNewSong(data)
+
+  handleUpdateVotes: (data) ->
+    @updateLastSeenDueToVote(data)
+
+  recordNewSong: (data) ->
+    dj = data.room.metadata.current_dj
+    if dj is Config.userid
+      @markovBreak()
+      return
+
+    unless data.room.metadata.current_song._id?
+      console.log("Received a newsong notification without a song id!")
+      console.log(data)
+
+    @autoAwesome(data)
+    @yoink(data)
+    @markovPush(data)
+
+  updateLastSeenDueToSpeech: (data) ->
+    name = data.name
+    text = data.text
+    userId = data.userid
+
+    @db = new Db("encobot", new Server("127.0.0.1", 27017, {}))
+    @db.open (err, p_client) =>
+      @db.collection "last_seen", (err, c) =>
+        c.findOne {userId: userId}, (err, one) =>
+          doc = if one then one else {userId: userId}
+          doc.name = name
+          doc.spoke = new Date
+          c.save doc
+          @db.close()
+
+  updateLastSeenDueToVote: (data) ->
+    votes = data.room.metadata.votelog
+
+    @db = new Db("encobot", new Server("127.0.0.1", 27017, {}))
+    @db.open (err, p_client) =>
+      @db.collection "last_seen", (err, c) =>
+        votes.forEach (vote) =>
+          userId = vote[0]
+          c.findOne {userId: userId}, (err, one) =>
+            doc = if one then one else {userId: userId}
+            doc.vote = new Date
+            c.save doc
+            @db.close()
+
+  checkForAndRespondToCommands: (data) ->
+    name = data.name
+    text = data.text
+    userid = data.userid
+
+    for response in responses
+      if ((match = text.match(response.regex)))
+        if response.public or @isOwner(userid)
+          console.log "encobot responds to #{response.regex} from #{name}"
+          response.func(data, match)
+          break
 
   checkAndCorrectSetup: ->
     modified = false
@@ -64,9 +187,22 @@ class Encobot extends Bot
           about: "This encobot belongs to: #{Config.owner}."
         , (r) ->
           if r.success
-            console.log "encobot updated her owner to: #{Config.owner}:"
+            console.log "encobot updated her owner to #{Config.owner}"
           else
             console.log "Error updating profile", r
+
+  lastSeen: (name, cb) ->
+    @db = new Db("encobot", new Server("127.0.0.1", 27017, {}))
+    @db.open (err, p_client) =>
+      @db.collection "last_seen", (err, c) =>
+        c.findOne {name: new RegExp("#{name}", "i")}, (err, doc) =>
+          if doc
+            latest = if doc.vote > doc.spoke then doc.vote else doc.spoke
+            seen = "I last saw #{doc.name} at #{latest.toString()}"
+          else
+            seen = "I've not seen #{name} before."
+          @db.close()
+          cb(seen)
 
   awesome: (cb) ->
     @vote "up", cb
@@ -128,9 +264,10 @@ class Encobot extends Bot
   markovClear: (data, cb) ->
     @db = new Db(Config.name, new Server("127.0.0.1", 27017, {}))
     @db.open (err, p_client) =>
-      @db.dropDatabase (err, result) =>
+      @db.collection "markov_chain", (err, c) =>
+        c.drop()
         @state.prevSong = undefined
-        console.log("cleared database")
+        console.log("cleared markov_chain")
         @db.close()
         cb(err, result)
 
@@ -159,80 +296,6 @@ class Encobot extends Bot
 
 bot = new Encobot(Config.auth, Config.userid, Config.roomid)
 
-
-responses = [
-  {
-    public: true
-    regex: new RegExp("^(what(?:'?s?| is)? up,?|hello|hi|h[ei]ya?) #{Config.name}\\??", "i")
-    func: (data) ->
-      name = data.name
-      bot.pickAndCompile bot.greetingResponses, {name: name}, (text) ->
-        bot.speak text
-  }, {
-    public: true
-    regex: new RegExp("^#{Config.name} identify( yourself)?", "i")
-    func: (data) ->
-      bot.speak "I am encobot! I come in peace to destroy the world."
-  }, {
-    public: false
-    regex: new RegExp("^#{Config.name} autoAwesome(?: (on|off)?)?", "i")
-    func: (data, match) ->
-      switch match[1]
-        when "on"
-          bot.state.autoAwesome = true
-        when "off"
-          bot.state.autoAwesome = false
-      s = if bot.state.autoAwesome then "on" else "off"
-      bot.speak("autoAwesome: #{s}")
-  }
-]
-
-if Config.pgRating
-  responses.push
-    public: true
-    regex: /\b(bitch(?:es)?|shit(?:er|ty)?|fuck(?:ing?|er|ed)?|cunt|asshole)\b/i
-    func: (data) ->
-      name = data.name
-      bot.speak "Hey #{name}! Let's try to keep our PG rating, OK?"
-
-bot.on "speak", (data) ->
-  name = data.name
-  text = data.text
-  userid = data.userid
-
-  for response in responses
-    if ((match = text.match(response.regex)))
-      if response.public or bot.isOwner(userid)
-        console.log "encobot responds to #{response.regex} from #{name}"
-        response.func(data, match)
-        break
-
-bot.on "newsong", (data) ->
-  console.log("newsong received", data.room.metadata.current_song)
-
-  dj = data.room.metadata.current_dj
-  if dj is Config.userid
-    bot.markovBreak()
-    return
-
-  unless data.room.metadata.current_song._id?
-    console.log("Received a newsong notification without a song id!")
-    console.log(data)
-
-  bot.autoAwesome(data)
-  bot.yoink(data)
-  bot.markovPush(data)
-
-
-bot.on "roomChanged", (data) ->
-  bot.checkAndCorrectSetup(data)
-  bot.moderatorIds = data.room.metadata.moderator_id
-
-bot.on "registered", (data) ->
-  bot.greet(data)
-
-bot.on "nosong", (data) ->
-  bot.speak "Awww, I hate it when it's quiet in here."
 
 bot.tcpListen 8080, "127.0.0.1"
 bot.on "tcpConnect", (socket) ->
@@ -312,5 +375,3 @@ bot.on "tcpMessage", (socket, msg) ->
   if msg.match(/^skip\r$/)
     bot.stopSong (data) ->
       socket.write(">> skip\n")
-
-bot.on "tcpEnd", (socket) ->
