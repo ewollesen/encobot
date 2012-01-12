@@ -37,6 +37,13 @@ responses = [
       name = match[1]
       bot.lastSeen name, (seen) ->
         bot.speak(seen)
+  }, {
+    public: false
+    regex: new RegExp("^#{Config.name} (?:last )?heard (.+)", "i")
+    func: (data, match) ->
+      artist = match[1]
+      bot.lastHeard artist, (heard) ->
+        bot.speak(heard)
   }
 ]
 
@@ -82,6 +89,7 @@ class Encobot extends Bot
   handleRoomChanged: (data) ->
     @checkAndCorrectSetup(data)
     @moderatorIds = data.room.metadata.moderator_id
+    @markovBreak()
 
   handleRegistered: (data) ->
     @greet(data)
@@ -125,9 +133,11 @@ class Encobot extends Bot
           doc = if one then one else {userId: userId}
           doc.name = name
           doc.spoke = new Date
+          doc.roomId = @roomId
           c.save doc
           @db.close()
 
+  # TODO: find the user's name from their userId
   updateLastSeenDueToVote: (data) ->
     votes = data.room.metadata.votelog
 
@@ -139,6 +149,7 @@ class Encobot extends Bot
           c.findOne {userId: userId}, (err, one) =>
             doc = if one then one else {userId: userId}
             doc.vote = new Date
+            doc.roomId = @roomId
             c.save doc
             @db.close()
 
@@ -195,7 +206,7 @@ class Encobot extends Bot
     @db = new Db("encobot", new Server("127.0.0.1", 27017, {}))
     @db.open (err, p_client) =>
       @db.collection "last_seen", (err, c) =>
-        c.findOne {name: new RegExp("#{name}", "i")}, (err, doc) =>
+        c.findOne {roomId: @roomId, name: new RegExp("#{name}", "i")}, (err, doc) =>
           if doc
             latest = if doc.vote > doc.spoke then doc.vote else doc.spoke
             seen = "I last saw #{doc.name} at #{latest.toString()}"
@@ -203,6 +214,19 @@ class Encobot extends Bot
             seen = "I've not seen #{name} before."
           @db.close()
           cb(seen)
+
+  lastHeard: (artist, cb) ->
+    @db = new Db("encobot", new Server("127.0.0.1", 27017, {}))
+    @db.open (err, p_client) =>
+      @db.collection "markov_chain", (err, c) =>
+        c.find {roomId: @roomId, artist: new RegExp("^#{artist}$", "i")}, (err, c) =>
+          c.sort({heard: -1}).limit(1).nextObject (err, doc) =>
+            if doc
+              heard = "I last heard \"#{doc.title}\" by #{doc.artist} at #{doc.heard.toString()}"
+            else
+              heard = "I've not heard #{artist} before."
+            @db.close()
+            cb(heard)
 
   awesome: (cb) ->
     @vote "up", cb
@@ -265,24 +289,31 @@ class Encobot extends Bot
     @db = new Db(Config.name, new Server("127.0.0.1", 27017, {}))
     @db.open (err, p_client) =>
       @db.collection "markov_chain", (err, c) =>
-        c.drop()
-        @state.prevSong = undefined
-        console.log("cleared markov_chain")
-        @db.close()
-        cb(err, result)
+        c.drop (err, result) =>
+          @state.prevSong = undefined
+          console.log("cleared markov_chain")
+          @db.close()
+          cb(err, result)
 
   markovPush: (data) ->
     songId = data.room.metadata.current_song._id
+    roomId = data.room.roomid
+    artist = data.room.metadata.current_song.metadata.artist
+    title = data.room.metadata.current_song.metadata.song
     @db = new Db("encobot", new Server("127.0.0.1", 27017, {}))
 
     @db.open (err, p_client) =>
       @db.collection "markov_chain", (err, c) =>
         doc =
           songId: songId
+          roomId: roomId
+          artist: artist
+          title: title
+          heard: new Date
         doc.prevSong = @state.prevSong if @state.prevSong
         c.insert doc, (err, docs) ->
-          console.log("appended a link to the chain", doc)
-          console.log("Now playing: #{data.room.metadata.current_song.metadata.song} - #{data.room.metadata.current_song.metadata.artist}")
+          console.log("Appended a link to the markov chain")
+          console.log("Now playing: #{title} - #{artist}")
 
         @state.prevSong = songId
         @db.close()
