@@ -1,6 +1,6 @@
-append = require("append")
+_und = require("underscore")
 Bot = require("ttapi")
-Config = append(require("./defaults"), require(process.argv[2]))
+Config = _und.extend({}, require("./defaults"), require(process.argv[2]))
 Db = require("mongodb").Db
 Connection = require("mongodb").Connection
 Server = require("mongodb").Server
@@ -27,6 +27,7 @@ class Encobot extends Bot
     @state =
       autoAwesome: Config.autoAwesome ? true
     @debug = false
+    @greetingResponses = Config.greetingResponses ? []
 
     super auth, userid, roomid
 
@@ -139,17 +140,11 @@ bot = new Encobot(Config.auth, Config.userid, Config.roomid)
 responses = [
   {
     public: true
-    regex: new RegExp("^(what(?:\\'?s?| is)? up,?|hello|hi|heya?) #{Config.name}\\??", "i")
+    regex: new RegExp("^(what(?:'?s?| is)? up,?|hello|hi|h[ei]ya?) #{Config.name}\\??", "i")
     func: (data) ->
       name = data.name
-      r = [
-        "Hey! How are you #{name}?",
-        "Hi yourself, #{name}.",
-        "How's it going?",
-        "What's up, #{name}?",
-        "I'm glad to see you, #{name}."
-      ]
-      bot.speak r.choice()
+      bot.pickAndCompile bot.greetingResponses, {name: name}, (text) ->
+        bot.speak text
   }, {
     public: true
     regex: new RegExp("^#{Config.name} identify( yourself)?", "i")
