@@ -56,15 +56,6 @@ class Encobot extends Bot
       cb()
     , delayInSeconds * 1000
 
-  # verve: (data) ->
-  #   song = data.room.metadata.current_song.metadata.song
-  #   artist = data.room.metadata.current_song.metadata.artist
-  #   if "The Freshmen" is song and "The Verve Pipe" is artist
-  #     @speak "Ben, you stink."
-  #     @lame()
-  #     true
-  #   false
-
   pickAndCompile: (phrases, values, cb) ->
     mu = Mu.compileText(phrases.choice())
     mu(values).addListener "data", (c) =>
@@ -204,7 +195,6 @@ bot.on "newsong", (data) ->
     bot.markovBreak()
     return
 
-  # return if bot.verve(data)
   bot.autoAwesome(data)
   bot.yoink(data)
   bot.markovPush(data)
