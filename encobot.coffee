@@ -7,8 +7,12 @@ Server = require("mongodb").Server
 Mu = require("Mu/mu")
 spawn = require('child_process').spawn
 
+log4js = require("log4js")
+log4js.addAppender(log4js.fileAppender("log/encobot.log"), "encobot")
+log = log4js.getLogger("encobot");
+log.setLevel("DEBUG");
+
 Config.commandPrefix = ->
-  console.log "(?:/|#{Config.name})"
   "(?:/|#{Config.name} )"
 
 responses = [
@@ -36,14 +40,14 @@ responses = [
       s = if bot.state.autoAwesome then "on" else "off"
       bot.speak("autoAwesome: #{s}")
   }, {
-    public: false
+    public: true
     regex: new RegExp("^#{Config.commandPrefix()}(?:last )?seen (.+)", "i")
     func: (data, match) ->
       name = match[1]
       bot.lastSeen name, (seen) ->
         bot.speak(seen)
   }, {
-    public: false
+    public: true
     regex: new RegExp("^#{Config.commandPrefix()}(?:last )?heard (.+)", "i")
     func: (data, match) ->
       artist = match[1]
@@ -89,9 +93,14 @@ responses = [
       bot.speak("/me hugs #{name}.")
   }, {
     public: true
-    regex: new RegExp("^:#{Config.commandPrefix()}(?:give me a )?hug", "i")
+    regex: new RegExp("^#{Config.commandPrefix()}(?:give me a )?hug", "i")
     func: (data) ->
       bot.speak("I don't hug strangers.")
+  }, {
+    public: false
+    regex: new RegExp("^#{Config.commandPrefix()}genuflect(?: before me)?", "i")
+    func: (data, match, name) ->
+      bot.speak("/me takes a knee in reverence to #{name}.")
   }
 ]
 
@@ -129,6 +138,7 @@ class Encobot extends Bot
     @on "newsong", @handleNewSong
     @on "roomChanged", @handleRoomChanged
     @on "registered", @handleRegistered
+    @on "deregistered", @handleDeregistered
     @on "nosong", @handleNoSong
     @on "update_votes", @handleUpdateVotes
 
@@ -136,6 +146,7 @@ class Encobot extends Bot
 
 
   handleRoomChanged: (data) ->
+    log.info("Entered room #{data.room.name}")
     @checkAndCorrectSetup(data)
     @moderatorIds = data.room.metadata.moderator_id
     @roomName = data.room.name
@@ -144,6 +155,9 @@ class Encobot extends Bot
   handleRegistered: (data) ->
     @greet(data)
     @updateLastSeenDueToRegistered(data)
+
+  handleDeregistered: (data) ->
+    @returnToRoomIfLeft(data)
 
   handleNoSong: (data) ->
     @speak "Awww, I hate it when it's quiet in here."
@@ -158,6 +172,11 @@ class Encobot extends Bot
   handleUpdateVotes: (data) ->
     @updateLastSeenDueToVote(data)
 
+  returnToRoomIfLeft: (data) ->
+    if Config.name is data.user[0].name
+      log.debug("I've left the room. I wonder why?")
+      process.exit(1);
+
   recordNewSong: (data) ->
     dj = data.room.metadata.current_dj
     if dj is Config.userid
@@ -165,8 +184,8 @@ class Encobot extends Bot
       return
 
     unless data.room.metadata.current_song._id?
-      console.log("Received a newsong notification without a song id!")
-      console.log(data)
+      log.debug("Received a newsong notification without a song id!")
+      log.debug(data)
 
     @autoAwesome(data)
     @yoink(data)
@@ -226,10 +245,9 @@ class Encobot extends Bot
     userid = data.userid
 
     for response in responses
-      console.log response.regex
       if ((match = text.match(response.regex)))
         if response.public or @isOwner(userid)
-          console.log "encobot responds to #{response.regex} from #{name}"
+          log.debug "encobot responds to #{response.regex} from #{name}"
           response.func(data, match, name)
           break
 
@@ -241,34 +259,34 @@ class Encobot extends Bot
         modified = true
         @modifyName Config.name, (r) ->
           if r.success
-            console.log "encobot updated her name to #{Config.name}"
+            log.debug "encobot updated her name to #{Config.name}"
           else
-            console.log "Error updating name", r
+            log.error "Error updating name", r
 
       if Config.avatar isnt data.avatarid
         modified = true
         @setAvatar Config.avatar, (r) ->
           if r.success
-            console.log "encobot updated her avatar to #{Config.avatar}"
+            log.debug "encobot updated her avatar to #{Config.avatar}"
           else
-            console.log "Error updating avatar", r
+            log.error "Error updating avatar", r
 
       if Config.laptop isnt data.laptop
         modified = true
         @modifyLaptop Config.laptop, (r) ->
           if r.success
-            console.log "encobot updated her laptop to #{Config.laptop}"
+            log.debug "encobot updated her laptop to #{Config.laptop}"
           else
-            console.log "Error updating laptop", r
+            log.error "Error updating laptop", r
 
       if modified
         @modifyProfile
           about: "This encobot belongs to: #{Config.owner}. See http://xmtp.net/~encoded/encobot for details."
         , (r) ->
           if r.success
-            console.log "encobot updated her owner to #{Config.owner}"
+            log.debug "encobot updated her owner to #{Config.owner}"
           else
-            console.log "Error updating profile", r
+            log.error "Error updating profile", r
 
   fortune: (cb) ->
     args = ["-s", "fortunes"]
@@ -378,7 +396,7 @@ class Encobot extends Bot
       @db.collection "markov_chain", (err, c) =>
         c.drop (err, result) =>
           @state.prevSong = undefined
-          console.log("cleared markov_chain")
+          log.info("cleared markov_chain")
           @db.close()
           cb(err, result)
 
@@ -399,8 +417,8 @@ class Encobot extends Bot
           heard: new Date
         doc.prevSong = @state.prevSong if @state.prevSong
         c.insert doc, (err, docs) ->
-          console.log("Appended a link to the markov chain")
-          console.log("Now playing: #{title} - #{artist}")
+          log.debug("Appended a link to the markov chain")
+          log.debug("Now playing: #{title} - #{artist}")
 
         @state.prevSong = songId
         @db.close()
@@ -444,22 +462,21 @@ bot.on "tcpMessage", (socket, msg) ->
   if msg.match(/^playlist\r$/)
     bot.playlistAll (data) ->
       for song in data.list
-        console.log("song", song)
         s = "\"#{song.metadata.song}\" - #{song.metadata.artist}"
         socket.write(">> #{s}\n")
   if msg.match(/^addDj\r$/)
     bot.playlistAdd "default", "4e1759b999968e76a4002cfc", (data) ->
-      console.log "playlistAdd:", data
+      log.debug "playlistAdd:", data
 
     bot.addDj (data) ->
-      console.log "Add DJ:", data
+      log.debug "Add DJ:", data
       if data.success
         socket.write ">> " + s + "\n"
       else
         socket.write ">> " + data.err + "\n"
   if msg.match(/^remDj\r$/)
     bot.remDj (data) ->
-      console.log "Rem DJ:", data
+      log.debug "Rem DJ:", data
       if data.success
         socket.write ">> " + s + "\n"
       else
@@ -472,7 +489,7 @@ bot.on "tcpMessage", (socket, msg) ->
       socket.write(">> awesome!\n")
   if data = msg.match(/^speak (.+)\r$/)
     bot.speak data[1], (data) ->
-      console.log "Speak:", data
+      log.debug "Speak:", data
       if data.success
         socket.write ">> " + s + "\n"
       else
@@ -481,7 +498,7 @@ bot.on "tcpMessage", (socket, msg) ->
     bot.playlistAll (data) ->
       for song in data.list
         bot.playlistRemove 0, (data) ->
-          console.log("remove", data)
+          log.debug("remove", data)
       socket.write(">> playlist cleared\n")
   if msg.match(/^markov clear\r$/)
     bot.markovClear data, (err, result) ->

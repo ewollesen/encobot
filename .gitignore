@@ -2,5 +2,6 @@
 *.swp
 *.default
 /encobot.js
-/industrial_101.js
 /defaults.js
+/log
+/industrial_101.*
