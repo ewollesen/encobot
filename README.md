@@ -13,6 +13,7 @@ Prerequisites
 7. node-mongodb-native (npm install mongodb)
 8. mongodb (duh)
 9. a turntable.fm userid, auth, and roomid (https://github.com/alaingilbert/Turntable-API/wiki/How-to-find-the:-auth,-userid-and-roomid)
+10. The fortune (6) command is in your path, and your fortunes database includes a "humorists" section.
 
 Running
 =======

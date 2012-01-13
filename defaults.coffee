@@ -4,7 +4,7 @@ module.exports =
   # roomid:
 
   name: "encobot"
-  laptop: "iphone"
+  laptop: "iphone" # or chrome, mac, pc, linux
   avatar: 6
   # owner:
 
