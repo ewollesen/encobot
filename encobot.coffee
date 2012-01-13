@@ -7,6 +7,10 @@ Server = require("mongodb").Server
 Mu = require("Mu/mu")
 spawn = require('child_process').spawn
 
+Config.commandPrefix = ->
+  console.log "(?:/|#{Config.name})"
+  "(?:/|#{Config.name} )"
+
 responses = [
   {
     public: true
@@ -17,12 +21,12 @@ responses = [
         bot.speak text
   }, {
     public: true
-    regex: new RegExp("^#{Config.name} identify( yourself)?", "i")
+    regex: new RegExp("^#{Config.commandPrefix()}identify( yourself)?", "i")
     func: (data) ->
-      bot.speak "I am encobot! I come in peace to destroy the world."
+      bot.speak "I am encobot! I come in peace to destroy the world. See http://xmtp.net/~encoded/encobot for details."
   }, {
     public: false
-    regex: new RegExp("^#{Config.name} autoAwesome(?: (on|off)?)?", "i")
+    regex: new RegExp("^#{Config.commandPrefix()}autoAwesome(?: (on|off)?)?", "i")
     func: (data, match) ->
       switch match[1]
         when "on"
@@ -33,24 +37,61 @@ responses = [
       bot.speak("autoAwesome: #{s}")
   }, {
     public: false
-    regex: new RegExp("^#{Config.name} (?:last )?seen (.+)", "i")
+    regex: new RegExp("^#{Config.commandPrefix()}(?:last )?seen (.+)", "i")
     func: (data, match) ->
       name = match[1]
       bot.lastSeen name, (seen) ->
         bot.speak(seen)
   }, {
     public: false
-    regex: new RegExp("^#{Config.name} (?:last )?heard (.+)", "i")
+    regex: new RegExp("^#{Config.commandPrefix()}(?:last )?heard (.+)", "i")
     func: (data, match) ->
       artist = match[1]
       bot.lastHeard artist, (heard) ->
         bot.speak(heard)
   }, {
     public: true
-    regex: new RegExp("^#{Config.name} tell me my fortune", "i")
+    regex: new RegExp("^#{Config.commandPrefix()}(?:tell me my )?fortune", "i")
     func: (data) ->
       bot.fortune (fortune) ->
         bot.speak(fortune)
+  }, {
+    public: true
+    regex: new RegExp("^#{Config.commandPrefix()}(?:tell me a )?joke", "i")
+    func: (data) ->
+      bot.joke (fortune) ->
+        bot.speak(fortune)
+  }, {
+    public: true
+    regex: new RegExp("^#{Config.commandPrefix()}dance", "i")
+    func: (data) ->
+      bot.dance (dance) ->
+        bot.speak(dance)
+  }, {
+    public: true
+    regex: new RegExp("^make me a sandwich", "i")
+    func: (data) ->
+      bot.speak("Make it yourself.")
+  }, {
+    public: false
+    regex: new RegExp("^sudo make me a sandwich", "i")
+    func: (data) ->
+      bot.speak("OK.")
+  }, {
+    public: true
+    regex: new RegExp("^sudo make me a sandwich", "i")
+    func: (data, match, name) ->
+      bot.speak("#{name} is not in the sudoers file. This incident will be reported.")
+  }, {
+    public: false
+    regex: new RegExp("^#{Config.commandPrefix()}(?:give me a )?hug", "i")
+    func: (data, match, name) ->
+      bot.speak("/me hugs #{name}.")
+  }, {
+    public: true
+    regex: new RegExp("^:#{Config.commandPrefix()}(?:give me a )?hug", "i")
+    func: (data) ->
+      bot.speak("I don't hug strangers.")
   }
 ]
 
@@ -79,6 +120,7 @@ Array::choice = ->
 class Encobot extends Bot
 
   constructor: (auth, userid, roomid) ->
+    @roomName = "Unknown Room"
     @state =
       autoAwesome: Config.autoAwesome ? true
     @debug = Config.debug ? false
@@ -96,6 +138,7 @@ class Encobot extends Bot
   handleRoomChanged: (data) ->
     @checkAndCorrectSetup(data)
     @moderatorIds = data.room.metadata.moderator_id
+    @roomName = data.room.name
     @markovBreak()
 
   handleRegistered: (data) ->
@@ -183,10 +226,11 @@ class Encobot extends Bot
     userid = data.userid
 
     for response in responses
+      console.log response.regex
       if ((match = text.match(response.regex)))
         if response.public or @isOwner(userid)
           console.log "encobot responds to #{response.regex} from #{name}"
-          response.func(data, match)
+          response.func(data, match, name)
           break
 
   checkAndCorrectSetup: ->
@@ -219,7 +263,7 @@ class Encobot extends Bot
 
       if modified
         @modifyProfile
-          about: "This encobot belongs to: #{Config.owner}."
+          about: "This encobot belongs to: #{Config.owner}. See http://xmtp.net/~encoded/encobot for details."
         , (r) ->
           if r.success
             console.log "encobot updated her owner to #{Config.owner}"
@@ -232,6 +276,17 @@ class Encobot extends Bot
     fortune = spawn("fortune", args)
     fortune.stdout.on "data", (data) =>
       cb(data)
+
+  joke: (cb) ->
+    args = ["-s", "humorists"]
+    args.push("-a") unless Config.pgRating
+    fortune = spawn("fortune", args)
+    fortune.stdout.on "data", (data) =>
+      cb(data)
+
+  dance: (cb) ->
+    @pickAndCompile Config.dances, {name: Config.name}, (dance) =>
+      cb(dance)
 
   lastSeen: (name, cb) ->
     @db = new Db("encobot", new Server("127.0.0.1", 27017, {}))
@@ -286,6 +341,7 @@ class Encobot extends Bot
 
       @pickAndCompile Config.greetings,
         name: name
+        room: @roomName
         , (text) =>
           @speak text
 
@@ -437,3 +493,5 @@ bot.on "tcpMessage", (socket, msg) ->
   if msg.match(/^skip\r$/)
     bot.stopSong (data) ->
       socket.write(">> skip\n")
+  if msg.match(/^room\r$/)
+    socket.write(">> room: \"#{bot.roomName}\" #{bot.roomId}\n")

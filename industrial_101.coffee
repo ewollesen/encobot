@@ -9,9 +9,11 @@ module.exports =
   owner: "encoded"
 
   # greetings: [
-  #   "Hey {{name}}, long time no see!",
-  #   "Woo! {{name}}'s here, now we can start the party!",
-  #   "/me shakes her booty across the floor to dance next to {{name}}."
+  #  "Hey {{name}}, long time no see!",
+  #  "Woo! {{name}}'s here, now we can start the party!",
+  #  "Welcome, {{name}}.",
+  #  "Glad you could join us, {{name}}."
+  #  "/me shakes her booty across the floor to dance next to {{name}}."
   # ]
   greetingResponses: [
     "Hey! How are you {{name}}?",
@@ -20,6 +22,17 @@ module.exports =
     "What's up, {{name}}?",
     "I'm glad to see you, {{name}}.",
     "Got any new music for me, {{name}}?"
+  ]
+  dances: [
+    "/me does the percolator.",
+    "/me dances a polka.",
+    "/me does the lawn sprinkler.",
+    "/me punches midgets.",
+    "/me pulls spiderwebs from the corners of the room. How gawf!",
+    "/me STOMPS.",
+    "/me DOES NOT DANCE.",
+    "Only if you'll dance with me sexy.",
+    "/me does the muppet dance."
   ]
 
   # pgRating: false

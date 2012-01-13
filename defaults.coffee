@@ -9,6 +9,7 @@ module.exports =
   # owner:
 
   greetings: [
+    "Welcome to {{room}}, {{name}}.",
     "Hey {{name}}, long time no see!",
     "Woo! {{name}}'s here, now we can start the party!",
     "Welcome, {{name}}.",
@@ -21,6 +22,11 @@ module.exports =
     "How's it going?",
     "What's up, {{name}}?",
     "I'm glad to see you, {{name}}."
+  ]
+  dances: [
+    "/me does the percolator",
+    "/me dances a polka",
+    "/me does the lawn sprinkler"
   ]
 
   pgRating: false
