@@ -5,12 +5,14 @@ TARGETS = encobot.js \
 	  defaults.js \
           industrial_101.js
 
-all: $(TARGETS)
+run:
+	coffee ./encobot.coffee ./industrial_101.coffee
 
-run: all
-	node ./encobot.js ./industrial_101.js
+all: compile
 
-clean: 
+compile: $(TARGETS)
+
+clean:
 	-rm -f *.js
 
 .coffee.js: $<

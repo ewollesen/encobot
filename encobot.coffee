@@ -136,6 +136,7 @@ class Encobot extends Bot
     @greetingResponses = Config.greetingResponses ? []
     @on "speak", @handleSpeak
     @on "newsong", @handleNewSong
+    @on "ready", @handleReady
     @on "roomChanged", @handleRoomChanged
     @on "registered", @handleRegistered
     @on "deregistered", @handleDeregistered
@@ -145,9 +146,12 @@ class Encobot extends Bot
     super auth, userid, roomid
 
 
-  handleRoomChanged: (data) ->
-    log.info("Entered room #{data.room.name}")
+  handleReady: (data) ->
+    log.info("encobot ready")
     @checkAndCorrectSetup(data)
+
+  handleRoomChanged: (data) ->
+    log.debug("Entered room #{data.room.name}")
     @moderatorIds = data.room.metadata.moderator_id
     @roomName = data.room.name
     @markovBreak()
