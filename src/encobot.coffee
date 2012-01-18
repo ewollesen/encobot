@@ -120,16 +120,15 @@ responses = [
     func: (data, match, name) ->
       bot.playlistLoad()
       bot.speak("Playlist loaded")
-  }
-]
-
-if Config.pgRating
-  responses.push
+  }, {
     public: true
     regex: /\b(bitch(?:es|y)?|shit(?:ty|tiest|ter)?|fuck(?:ing?|er|ed)?|cunt|asshole)\b/i
     func: (data) ->
+      return unless Config.pgRating
       name = data.name
       bot.speak "Hey #{name}! Let's try to keep our PG rating, OK?"
+  }
+]
 
 Math.randInt = (min, max) ->
   max ||= min
