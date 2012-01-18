@@ -6,9 +6,10 @@ Connection = require("mongodb").Connection
 Server = require("mongodb").Server
 Mu = require("Mu/mu")
 spawn = require('child_process').spawn
-
 log4js = require("log4js")
-log4js.addAppender(log4js.fileAppender("log/encobot.log"), "encobot")
+
+
+log4js.addAppender(log4js.fileAppender(Config.logfile ? "log/encobot.log"), "encobot")
 log = log4js.getLogger("encobot");
 log.setLevel("DEBUG");
 
@@ -151,7 +152,7 @@ class Encobot extends Bot
     @checkAndCorrectSetup(data)
 
   handleRoomChanged: (data) ->
-    log.debug("Entered room #{data.room.name}")
+    log.debug("Entered room \"#{data.room.name}\"")
     @moderatorIds = data.room.metadata.moderator_id
     @roomName = data.room.name
     @markovBreak()
@@ -171,6 +172,7 @@ class Encobot extends Bot
     @updateLastSeenDueToSpeech(data)
 
   handleNewSong: (data) ->
+    @autoAwesome(data)
     @recordNewSong(data)
 
   handleUpdateVotes: (data) ->
@@ -191,7 +193,6 @@ class Encobot extends Bot
       log.debug("Received a newsong notification without a song id!")
       log.debug(data)
 
-    @autoAwesome(data)
     @yoink(data)
     @markovPush(data)
 
@@ -227,7 +228,6 @@ class Encobot extends Bot
           c.save doc
           @db.close()
 
-  # TODO: find the user's name from their userId
   updateLastSeenDueToVote: (data) ->
     votes = data.room.metadata.votelog
 
@@ -371,6 +371,7 @@ class Encobot extends Bot
     return unless @state.autoAwesome
 
     @afterPause Math.randInt(5, 30), =>
+      return unless @currentSongId
       v = Math.random()
 
       if v > 0.95

@@ -7,6 +7,7 @@ module.exports =
   laptop: "iphone" # or chrome, mac, pc, linux
   avatar: 6
   # owner:
+  # logfile: "log/encobot.log"
 
   greetings: [
     "Welcome to {{room}}, {{name}}.",
