@@ -6,6 +6,7 @@ Connection = require("mongodb").Connection
 Server = require("mongodb").Server
 Mu = require("Mu/mu")
 spawn = require('child_process').spawn
+defer = require("node-promise").defer
 log4js = require("log4js")
 
 
@@ -102,13 +103,30 @@ responses = [
     regex: new RegExp("^#{Config.commandPrefix()}genuflect(?: before me)?", "i")
     func: (data, match, name) ->
       bot.speak("/me takes a knee in reverence to #{name}.")
+  }, {
+    public: false
+    regex: new RegExp("^#{Config.commandPrefix()}skip", "i")
+    func: (data, match, name) ->
+      bot.stopSong()
+  }, {
+    public: false
+    regex: new RegExp("^#{Config.commandPrefix()}playlist clear", "i")
+    func: (data, match, name) ->
+      bot.playlistClear.then ->
+        bot.speak("Playlist cleared")
+  }, {
+    public: false
+    regex: new RegExp("^#{Config.commandPrefix()}playlist load", "i")
+    func: (data, match, name) ->
+      bot.playlistLoad()
+      bot.speak("Playlist loaded")
   }
 ]
 
 if Config.pgRating
   responses.push
     public: true
-    regex: /\b(bitch(?:es)?|shit(?:er|ty)?|fuck(?:ing?|er|ed)?|cunt|asshole)\b/i
+    regex: /\b(bitch(?:es|y)?|shit(?:ty|tiest|ter)?|fuck(?:ing?|er|ed)?|cunt|asshole)\b/i
     func: (data) ->
       name = data.name
       bot.speak "Hey #{name}! Let's try to keep our PG rating, OK?"
@@ -393,7 +411,7 @@ class Encobot extends Bot
       if length > 1
         @playlistReorder(0, Math.randInt(length))
       if data.list.length > 300
-        @playlistRemove(length - 1)
+        @playlistDel(length - 1)
 
   markovClear: (data, cb) ->
     @db = new Db(Config.name, new Server("127.0.0.1", 27017, {}))
@@ -434,6 +452,47 @@ class Encobot extends Bot
   isOwner: (userId) ->
     userId in @moderatorIds or userId in Config.ownerIds
 
+  # TODO: set me up with a callback and check for errors
+  playlistClear: ->
+    @_deferred (dfd) =>
+      @playlistAll (data) =>
+        return dfd.reject(data) unless data.success
+
+        for song in data.list
+          @playlistDel 0, (data) =>
+            return dfd.reject(data) unless data.success
+            log.debug("removed song with id: #{data}")
+
+        # I am called too early
+        dfd.resolve(data)
+
+  playlistDel: (index) ->
+    @_deferred (dfd) =>
+      @playlistRemove index, (data) =>
+        return dfd.reject(data) unless data.success
+        log.debug("playlist remove success #{index} #{data.fileid}")
+        dfd.resolve(data)
+
+  # TODO: set me up with a callback and check for errors
+  playlistLoad: ->
+    @db.collection "markov_chain", (err, c) =>
+      log.debug("using roomId: #{@roomId}")
+      c.find {roomId: @roomId}, (err, c) =>
+        c.each (err, doc) =>
+          if doc and doc.songId
+            @playlistAdd doc.songId, (err, result) =>
+              log.debug("added #{doc.songId}")
+          else
+            log.debug("doc has no songId:", doc)
+      @db.close()
+
+  reportError: (data) ->
+    log.error(data)
+
+  _deferred: (f) ->
+    dfd = defer()
+    f(dfd)
+    dfd.promise
 
 bot = new Encobot(Config.auth, Config.userid, Config.roomid)
 
@@ -465,10 +524,22 @@ bot.on "tcpMessage", (socket, msg) ->
       else
         socket.write ">> " + data.err + "\n"
   if msg.match(/^playlist\r$/)
+    idx = 0
     bot.playlistAll (data) ->
       for song in data.list
+        idx += 1
         s = "\"#{song.metadata.song}\" - #{song.metadata.artist}"
-        socket.write(">> #{s}\n")
+        socket.write(">> #{idx}: #{s}\n")
+    log.debug("playlist fin")
+
+  if data = msg.match(/^playlist del ([0-9]+)\r$/)
+    index = Math.max(0, parseInt(data[1]) - 1)
+    bot.playlistDel(index).then (data) ->
+      socket.write ">> OK\n"
+
+  if msg.match(/^playlist clear\r$/)
+    bot.playlistClear().then ->
+      socket.write(">> playlist cleared\n")
   if msg.match(/^addDj\r$/)
     bot.playlistAdd "default", "4e1759b999968e76a4002cfc", (data) ->
       log.debug "playlistAdd:", data
@@ -499,12 +570,6 @@ bot.on "tcpMessage", (socket, msg) ->
         socket.write ">> " + s + "\n"
       else
         socket.write ">> " + data.err + "\n"
-  if msg.match(/^playlist clear\r$/)
-    bot.playlistAll (data) ->
-      for song in data.list
-        bot.playlistRemove 0, (data) ->
-          log.debug("remove", data)
-      socket.write(">> playlist cleared\n")
   if msg.match(/^markov clear\r$/)
     bot.markovClear data, (err, result) ->
       socket.write(">> markov cleared\n")
@@ -517,3 +582,7 @@ bot.on "tcpMessage", (socket, msg) ->
       socket.write(">> skip\n")
   if msg.match(/^room\r$/)
     socket.write(">> room: \"#{bot.roomName}\" #{bot.roomId}\n")
+  if msg.match(/^roomInfo\r$/)
+    bot.roomInfo (data) ->
+      log.debug("roomInfo", data)
+      socket.write(">> roomInfo has been logged\n")

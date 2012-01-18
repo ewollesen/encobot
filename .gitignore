@@ -1,7 +1,7 @@
 .DS_Store
 *.swp
 *.default
-/encobot.js
-/defaults.js
+*.js
+/extras
 /log
-/industrial_101.*
+/rooms

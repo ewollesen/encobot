@@ -1,6 +1,0 @@
-#!/bin/bash
-
-while OUTPUT=`inotifywait -e modify *.coffee`; do
-    echo OUTPUT: $OUTPUT
-    echo $OUTPUT | grep --color=never -oE '([^[:space:]]+)\.coffee' | xargs coffee --compile --bare
-done
