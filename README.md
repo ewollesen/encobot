@@ -19,9 +19,14 @@ Running
 =======
 
 encobot assumes you're running mongodb on localhost on the default port.
-encobot assumes there is a directory named log into which she can write her log file.
 
     $ cp defaults.coffee <room>.coffee
     $ # edit room.coffee to taste
     $ coffee ./encobot.coffee  ./<room>.coffee
 
+
+More Info
+=========
+
+* http://xmtp.net/~encoded/encobot
+* https://github.com/ewollesen/encobot
