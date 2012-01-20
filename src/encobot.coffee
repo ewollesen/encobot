@@ -491,7 +491,7 @@ class Encobot extends Bot
 bot = new Encobot(Config.auth, Config.userid, Config.roomid)
 
 
-bot.tcpListen 8080, "127.0.0.1"
+bot.tcpListen Config.tcpConsolePort ? 2222, "127.0.0.1"
 bot.on "tcpConnect", (socket) ->
   socket.write ">> welcome to encobot console access\n"
 

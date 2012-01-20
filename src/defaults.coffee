@@ -34,3 +34,5 @@ module.exports =
   autoAwesome: false
 
   ownerIds: []
+
+  # tcpConsolePort: 2222
