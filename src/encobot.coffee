@@ -160,6 +160,7 @@ class Encobot extends Bot
     @on "deregistered", @handleDeregistered
     @on "nosong", @handleNoSong
     @on "update_votes", @handleUpdateVotes
+    @db = new Db("encobot", new Server("127.0.0.1", 27017, {}))
 
     super auth, userid, roomid
 
@@ -218,10 +219,9 @@ class Encobot extends Bot
     text = data.text
     userId = data.userid
 
-    @db = new Db("encobot", new Server("127.0.0.1", 27017, {}))
-    @db.open (err, p_client) =>
-      @db.collection "last_seen", (err, c) =>
-        c.findOne {userId: userId}, (err, one) =>
+    @db.open (error, db) =>
+      @db.collection "last_seen", (error, c) =>
+        c.findOne {userId: userId}, (error, one) =>
           doc = if one then one else {userId: userId}
           doc.name = name
           doc.spoke = new Date
@@ -234,10 +234,9 @@ class Encobot extends Bot
     userId = data.user[0].userid
     name = data.user[0].name
 
-    @db = new Db("encobot", new Server("127.0.0.1", 27017, {}))
-    @db.open (err, p_client) =>
-      @db.collection "last_seen", (err, c) =>
-        c.findOne {userId: userId}, (err, one) =>
+    @db.open (error, db) =>
+      @db.collection "last_seen", (error, c) =>
+        c.findOne {userId: userId}, (error, one) =>
           doc = if one then one else {userId: userId}
           doc.name = name
           doc.registered = new Date
@@ -248,12 +247,11 @@ class Encobot extends Bot
   updateLastSeenDueToVote: (data) ->
     votes = data.room.metadata.votelog
 
-    @db = new Db("encobot", new Server("127.0.0.1", 27017, {}))
-    @db.open (err, p_client) =>
-      @db.collection "last_seen", (err, c) =>
+    @db.open (error, db) =>
+      @db.collection "last_seen", (error, c) =>
         votes.forEach (vote) =>
           userId = vote[0]
-          c.findOne {userId: userId}, (err, one) =>
+          c.findOne {userId: userId}, (error, one) =>
             doc = if one then one else {userId: userId}
             doc.vote = new Date
             doc.roomId = @roomId
@@ -328,10 +326,9 @@ class Encobot extends Bot
       cb(dance)
 
   lastSeen: (name, cb) ->
-    @db = new Db("encobot", new Server("127.0.0.1", 27017, {}))
-    @db.open (err, p_client) =>
-      @db.collection "last_seen", (err, c) =>
-        c.findOne {roomId: @roomId, name: new RegExp("#{name}", "i")}, (err, doc) =>
+    @db.open (error, db) =>
+      @db.collection "last_seen", (error, c) =>
+        c.findOne {roomId: @roomId, name: new RegExp("#{name}", "i")}, (error, doc) =>
           if doc
             latest = new Date Math.max(doc.vote ? 0, doc.spoke ? 0, doc.registered ? 0)
             seen = "I last saw #{doc.name} at #{latest.toString()}"
@@ -341,11 +338,11 @@ class Encobot extends Bot
           cb(seen)
 
   lastHeard: (artist, cb) ->
-    @db = new Db("encobot", new Server("127.0.0.1", 27017, {}))
-    @db.open (err, p_client) =>
-      @db.collection "markov_chain", (err, c) =>
-        c.find {roomId: @roomId, artist: new RegExp("^#{artist}$", "i")}, (err, c) =>
-          c.sort({heard: -1}).limit(1).nextObject (err, doc) =>
+    @db.open (error, db) =>
+      @db.collection "markov_chain", (error, c) =>
+        log.error("Error in lastHeard: ", error) if error
+        c.find {roomId: @roomId, artist: new RegExp("^#{artist}$", "i")}, (error, c) =>
+          c.sort({heard: -1}).limit(1).nextObject (error, doc) =>
             if doc
               heard = "I last heard \"#{doc.title}\" by #{doc.artist} at #{doc.heard.toString()}"
             else
@@ -413,24 +410,22 @@ class Encobot extends Bot
         @playlistDel(length - 1)
 
   markovClear: (data, cb) ->
-    @db = new Db(Config.name, new Server("127.0.0.1", 27017, {}))
-    @db.open (err, p_client) =>
-      @db.collection "markov_chain", (err, c) =>
-        c.drop (err, result) =>
+    @db.open (error, db) =>
+      @db.collection "markov_chain", (error, c) =>
+        c.drop (error, result) =>
           @state.prevSong = undefined
           log.info("cleared markov_chain")
           @db.close()
-          cb(err, result)
+          cb(error, result)
 
   markovPush: (data) ->
     songId = data.room.metadata.current_song._id
     roomId = data.room.roomid
     artist = data.room.metadata.current_song.metadata.artist
     title = data.room.metadata.current_song.metadata.song
-    @db = new Db("encobot", new Server("127.0.0.1", 27017, {}))
 
-    @db.open (err, p_client) =>
-      @db.collection "markov_chain", (err, c) =>
+    @db.open (error, db) =>
+      @db.collection "markov_chain", (error, c) =>
         doc =
           songId: songId
           roomId: roomId
@@ -438,7 +433,7 @@ class Encobot extends Bot
           title: title
           heard: new Date
         doc.prevSong = @state.prevSong if @state.prevSong
-        c.insert doc, (err, docs) ->
+        c.insert doc, (error, docs) ->
           log.debug("Appended a link to the markov chain")
           log.debug("Now playing: #{title} - #{artist}")
 
@@ -474,12 +469,12 @@ class Encobot extends Bot
 
   # TODO: set me up with a callback and check for errors
   playlistLoad: ->
-    @db.collection "markov_chain", (err, c) =>
+    @db.collection "markov_chain", (error, c) =>
       log.debug("using roomId: #{@roomId}")
-      c.find {roomId: @roomId}, (err, c) =>
-        c.each (err, doc) =>
+      c.find {roomId: @roomId}, (error, c) =>
+        c.each (error, doc) =>
           if doc and doc.songId
-            @playlistAdd doc.songId, (err, result) =>
+            @playlistAdd doc.songId, (error, result) =>
               log.debug("added #{doc.songId}")
           else
             log.debug("doc has no songId:", doc)
@@ -570,7 +565,7 @@ bot.on "tcpMessage", (socket, msg) ->
       else
         socket.write ">> " + data.err + "\n"
   if msg.match(/^markov clear\r$/)
-    bot.markovClear data, (err, result) ->
+    bot.markovClear data, (error, result) ->
       socket.write(">> markov cleared\n")
   if msg.match(/^randInt\r$/)
     socket.write(">> #{Math.randInt(1,5)}\n")
